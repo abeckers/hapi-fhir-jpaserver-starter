@@ -1,0 +1,92 @@
+# @format
+
+# Build JAVA applications using Apache Maven (http://maven.apache.org)
+# For docker image tags see https://hub.docker.com/_/maven/
+#
+# For general lifecycle information see https://maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html
+
+# This template will build and test your projects
+# * Caches downloaded dependencies and plugins between invocation.
+# * Verify but don't deploy merge requests.
+# * Deploy built artifacts from master branch only.
+stages:
+  - containerize
+  - deployment
+
+variables:
+  # This will suppress any download for dependencies and plugins or upload messages which would clutter the console log.
+  # `showDateTime` will show the passed time in milliseconds. You need to specify `--batch-mode` to make this work.
+  MAVEN_OPTS: '-Dhttps.protocols=TLSv1.2 -Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=WARN -Dorg.slf4j.simpleLogger.showDateTime=true -Djava.awt.headless=true'
+  # As of Maven 3.3.0 instead of this you may define these options in `.mvn/maven.config` so the same config is used
+  # when running from the command line.
+  # `installAtEnd` and `deployAtEnd` are only effective with recent version of the corresponding plugins.
+  MAVEN_CLI_OPTS: '--batch-mode --errors --fail-at-end --show-version -DinstallAtEnd=true -DdeployAtEnd=true'
+  DOCKER_IMAGE: ${CI_REGISTRY_IMAGE}
+  DOCKER_NAME: ${CI_PROJECT_NAME}
+  RELEASE_NAME: fhir-server
+  K8S_NAMESPACE: cologne-intelligence-kvdt
+  HELM_CHART_RELATIVE_PATH: chart
+  VALUES_FILE: ./charts/artemis/values.yaml
+
+containerize:
+  environment: stage
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  stage: containerize
+  before_script:
+    - echo "{\"auths\":{\"${CI_REGISTRY}\":{\"username\":\"${CI_REGISTRY_USER}\",\"password\":\"${CI_REGISTRY_PASSWORD}\"}}}" > /kaniko/.docker/config.json
+  script:
+    - if [[ "x${CI_COMMIT_BRANCH}" = "xmaster" ]]; then LATEST_TAG="--destination ${DOCKER_IMAGE}:latest"; else LATEST_TAG=""; fi
+    - /kaniko/executor --context ${CI_PROJECT_DIR} --dockerfile ${CI_PROJECT_DIR}/Dockerfile --destination ${DOCKER_IMAGE}:${DOCKER_TAG} --destination ${DOCKER_IMAGE}:${CI_COMMIT_REF_SLUG} ${LATEST_TAG}
+  tags:
+    - art-stage
+
+'Deploy to staging':
+  image: dtzar/helm-kubectl:latest
+  variables:
+    SPRING_DATASOURCE_URL: 'jdbc:postgresql://postgresql-k8s-vip.stage.art.adacor.host:5432/ci_fhir'
+    SPRING_DATASOURCE_USERNAME: usr-ci-fhir
+    SPRING_DATASOURCE_PASSWORD: z19OiyD2pkNt4vuAVJayCaDcPFQbphzR
+  stage: deployment
+  script:
+    # Helm Lint (non failing)
+    - helm lint $HELM_CHART_RELATIVE_PATH
+    # Parse dependencies
+    - helm dependency list $HELM_CHART_RELATIVE_PATH
+      | tail -n 2
+      | head -n -1
+      | cut -f 1,3
+      | xargs --no-run-if-empty bash -c  'helm repo add "$0" "$1"' || true
+    # Update dependencies using credentials acquired earlier
+    - helm dependency update $HELM_CHART_RELATIVE_PATH
+    # Show genreated manifests with helm template
+    - helm template $RELEASE_NAME
+      --namespace $K8S_NAMESPACE
+      --values $VALUES_FILE $HELM_CHART_RELATIVE_PATH $HELM_UPGRADE_EXTRA_ARGS
+
+    # Deploy the helm chart
+#    - helm upgrade
+#      --install $RELEASE_NAME
+#      --namespace $K8S_NAMESPACE
+#      --values $VALUES_FILE
+#      --wait --timeout=10m0s $HELM_CHART_RELATIVE_PATH $HELM_UPGRADE_EXTRA_ARGS
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  tags:
+    - art-stage
+
+'Deploy to production':
+  image: dtzar/helm-kubectl:latest
+  variables:
+    SPRING_DATASOURCE_URL: 'jdbc:postgresql://postgresql-k8s-vip.prod.art.adacor.host:5432/ci_fhir'
+  stage: deployment
+  script:
+    - helm upgrade
+      --install $RELEASE_NAME
+      --namespace $K8S_NAMESPACE
+      --values $VALUES_FILE
+      --wait --timeout=10m0s $HELM_CHART_RELATIVE_PATH $HELM_UPGRADE_EXTRA_ARGS
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_RUNNER_TAGS != "art-stage"
+      when: manual

@@ -1,1 +1,1 @@
-docker build --tag hapiproject/hapi:latest --tag hapiproject/hapi:4.1 -m 4g .
+docker build --tag hapiproject/hapi:v6.0.4-artemis -m 4g .

@@ -1,0 +1,28 @@
+# @format
+
+version: '3.7'
+services:
+  web:
+    image: hapiproject/hapi:v6.0.4-artemis
+    ports:
+      - 8280:8080
+    environment:
+      HAPI_FHIR_CORS_ALLOWED_ORIGIN_0: '*'
+      HAPI_FHIR_RE_USE_CACHED_SEARCH_RESULTS_MILLIS: 60
+      SPRING_DATASOURCE_URL: 'jdbc:postgresql://db:5432/fhir'
+      SPRING_DATASOURCE_USERNAME: fhir
+      SPRING_DATASOURCE_PASSWORD: fhir
+      SPRING_DATASOURCE_driverClassName: org.postgresql.Driver
+      SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT: org.hibernate.dialect.PostgreSQL95Dialect
+      SPRING_FLYWAY_ENABLED: "true"
+  db:
+    image: postgres:14.5-alpine
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_PASSWORD: fhir
+      POSTGRES_USER: fhir
+  adminer:
+    image: adminer
+    ports:
+      - 8281:8080

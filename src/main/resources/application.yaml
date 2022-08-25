@@ -202,3 +202,12 @@ hapi:
 #  protocol: 'http'
 #  schema_management_strategy: CREATE
 #  username: SomeUsername
+---
+
+spring:
+  config:
+    activate:
+      on-profile:
+      - dev 
+server:
+  port: 8280
