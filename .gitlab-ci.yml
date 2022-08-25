@@ -44,10 +44,6 @@ containerize:
 
 'Deploy to staging':
   image: dtzar/helm-kubectl:latest
-  variables:
-    SPRING_DATASOURCE_URL: 'jdbc:postgresql://postgresql-k8s-vip.stage.art.adacor.host:5432/ci_fhir'
-    SPRING_DATASOURCE_USERNAME: usr-ci-fhir
-    SPRING_DATASOURCE_PASSWORD: z19OiyD2pkNt4vuAVJayCaDcPFQbphzR
   stage: deployment
   script:
     # Helm Lint (non failing)
